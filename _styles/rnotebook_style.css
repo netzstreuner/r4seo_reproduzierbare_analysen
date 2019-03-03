@@ -1,0 +1,32 @@
+body {
+	font-family: "Ubuntu Condensed";
+	font-size: 16px;
+}
+code {
+	font-family: Consolas;
+}
+h1, h2, h3, h4, h5, h6 {
+	font-family: "Ubuntu Condensed";
+}
+h1 {
+	border-bottom: 3px solid;
+	line-height:1.6;
+}
+h2 {
+	border-bottom: 2px solid;
+	line-height:1.6;
+}
+h3 {
+	border-bottom: 1px solid;
+	line-height:1.6;
+}
+h4 {
+	border-bottom: 1px dotted;
+	line-height: 1.6;
+}
+ul li {
+	list-style-type: square;
+}
+#TOC ul li {
+	list-style-type: none;
+}
