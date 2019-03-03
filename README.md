@@ -1,2 +1,2 @@
-# r4seo_reproduzierbare_analysen
-Repo für das R-Skript zum SEO Day- &amp; Campixx-Vortrag
+# R4SEO – Dokumentation, Reproduktion und Kommunikation von SEO-Analysen mit R 📈
+Repo für das R-Skript zum SEO Day- & Campixx-Vortrag
