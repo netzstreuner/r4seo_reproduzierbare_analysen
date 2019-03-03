@@ -209,8 +209,8 @@ Ein Großteil der Seiten (**`r round(crawl %>% filter(status_code == 200) %>% nr
     filter(status_code == 404) %>%
     select(address) %>%
     inner_join(inlinks,
-                         by = c("address" = "destination"),
-                         copy = TRUE) %>%
+               by = c("address" = "destination"),
+               copy = TRUE) %>%
     select(address, source, anchor))
 
 write_csv(not_found_urls, "_exports/not_found_urls.csv")
@@ -292,7 +292,7 @@ ggplot(pageviews_vs_linkscore, aes(pageviews, link_score, color = seg_seitenbere
              color = "Seitenbereich",
              caption = paste0("Stand: ", Sys.Date())) +
     theme(plot.title = element_text(face = "bold"),
-                plot.subtitle = element_text(color = "#666666"),
-                plot.caption = element_text(color = "#AAAAAA", size = 10)) +
+          plot.subtitle = element_text(color = "#666666"),
+          plot.caption = element_text(color = "#AAAAAA", size = 10)) +
     scale_x_log10(labels = scales::comma_format(big.mark = ".", decimal.mark = "."))
 ```
