@@ -1,0 +1,298 @@
+---
+title: "R4SEO"
+author: "Patrick"
+date: "2019-02-07"
+output: 
+  html_notebook: 
+    code_folding: hide
+    css: _styles/rnotebook_style.css
+    number_sections: yes
+    toc: yes
+---
+
+```{r echo=FALSE}
+htmltools::img(src = knitr::image_uri("_styles/get_traction.jpg"),
+               style = 'position:absolute; top:0; right:0; padding:10px;width:100px;height=100px')
+```
+
+```{r message=FALSE, include=FALSE}
+library(tidyverse)
+library(janitor)
+```
+
+```{r}
+# Konfiguration -------------------------------------------------------
+
+COLOR_SCHEME <- c("#1B9E77","#D95F02","#7570B3","#E7298A","#66A61E","#E6AB02","#A6761D","#666666")
+```
+
+
+```{r}
+# Funktionen ----------------------------------------------------------
+
+# Spaltenwerte klein schreiben
+normalize_cols <- function(crawl) {
+  crawl %>%
+    mutate_at(c("content",
+                "status",
+                "meta_robots_1",
+                "indexability",
+                "indexability_status"),
+              tolower)
+}
+
+# Content Type extrahieren
+extract_content_type <- function(crawl) {
+  crawl %>%
+    mutate(content_type = case_when(str_detect(content, "html") ~ "HTML",
+                                    str_detect(content, "javascript") ~ "JavaScript",
+                                    str_detect(content, "css") ~ "CSS",
+                                    str_detect(content, "image") ~ "Image",
+                                    str_detect(content, "pdf") ~ "PDF",
+                                    str_detect(content, "flash") ~ "Flash",
+                                    TRUE ~ "Other"))
+}
+
+# URLs segmentieren
+segment_urls <- function(crawl) {
+  crawl %>%
+    mutate(seg_seitenbereich = case_when(content_type == "HTML" & str_detect(address, "^https?://www.barf-alarm.de/$") ~ "Startseite",
+                                         content_type == "HTML" & str_detect(address, "^https?://www.barf-alarm.de/(shop|produkt)/") ~ "Shop",
+                                         content_type == "HTML" & str_detect(address, "^https?://www.barf-alarm.de/blog/") ~ "Blog",
+                                         content_type == "HTML" ~ "Sonstige"))
+}
+
+# Kategoriale Daten bestimmten
+categorize_cols <- function(crawl) {
+  crawl %>%
+    mutate_at(c("content",
+                "status",
+                "status_code",
+                "indexability",
+                "indexability_status",
+                "meta_robots_1",
+                "content_type"),
+              factor)
+}
+
+# Join Indicator
+full_join_indicator <- function(x, y, by = NULL, suffix = c(".x", ".y"), indicator = c("left_only", "right_only", "matched"),...){
+
+    # Checking to make sure used variable names are not already in use
+    if(".x_tracker" %in% names(x)){
+        message("Warning: variable .x_tracker in left data was dropped")
+    }
+    if(".y_tracker" %in% names(y)){
+        message("Warning: variable .y_tracker in right data was dropped")
+    }
+    if("join_indicator" %in% names(x) | "join_indicator" %in% names(y)){
+        stop("Variable join_indicator already exists; change name before proceeding")
+    }
+
+    # Adding simple merge tracker variables to data frames
+    x[, ".x_tracker"] <- 1
+    y[, ".y_tracker"] <- 1
+
+    # Doing full join
+    joined <- full_join(x, y, by = by, suffix = suffix, ...)
+
+    # Calculating merge diagnoses
+    matched <- joined %>%
+        filter(!is.na(.x_tracker) & !is.na(.y_tracker)) %>%
+        NROW()
+    unmatched_x <- joined %>%
+        filter(!is.na(.x_tracker) & is.na(.y_tracker)) %>%
+        NROW()
+    unmatched_y <- joined %>%
+        filter(is.na(.x_tracker) & !is.na(.y_tracker)) %>%
+        NROW()
+
+    # Print merge diagnoses
+    message(
+        unmatched_x, " Rows ONLY from left data frame", "\n",
+        unmatched_y, " Rows ONLY from right data frame", "\n",
+        matched, " Rows matched"
+    )
+
+    # Create join_indicator variable
+    joined <- joined %>%
+        mutate(join_indicator =
+                        case_when(
+                            !is.na(.$.x_tracker) & is.na(.$.y_tracker) ~ indicator[1],
+                            is.na(.$.x_tracker) & !is.na(.$.y_tracker) ~ indicator[2],
+                            TRUE ~ indicator[3]
+                        )
+        )
+
+    # Dropping tracker variables and returning data frame
+    joined <- joined %>%
+        select(-.x_tracker, -.y_tracker)
+    return(joined)
+
+}
+```
+
+```{r message=FALSE, warning=FALSE}
+# Daten laden ---------------------------------------------------------
+
+# aktueller Crawl
+crawl <- read_csv("_data/internal_all_2019-02-05.csv", skip = 1) %>%
+  clean_names() %>%
+  normalize_cols() %>%
+  extract_content_type() %>%
+  segment_urls() %>%
+  categorize_cols()
+
+# alter Crawl
+crawl_old <- read_csv("_data/internal_all_2018-10-25.csv", skip = 1) %>%    
+  clean_names() %>%
+  normalize_cols() %>%
+  extract_content_type() %>%
+  segment_urls() %>%
+  categorize_cols()
+
+
+# Daten laden 2 -------------------------------------------------------
+
+# Interne Verlinkung
+all_inlinks <- read_csv("_data/all_inlinks_2019-02-05.csv", skip = 1) %>%
+    clean_names()
+
+# Verbindung zu DB aufbauen
+con <- DBI::dbConnect(RSQLite::SQLite(), "all_inlinks.sqlite")
+
+# Tabelle erzeugen und Daten schreiben
+copy_to(dest = con,
+        df = all_inlinks,
+        name = "inlinks",
+        temporary = FALSE,
+        indexes = list("source",
+                       "destination"))
+
+# Speicher wieder freigeben
+rm(all_inlinks)
+
+# Refrenze zur DB-Tabelle herstellen
+inlinks <- tbl(con, "inlinks")
+```
+
+# Analyse
+
+Insgesamt wurden **`r nrow(crawl)`** URLs gecrawlt.
+
+```{r}
+crawl %>%
+  count(status_code) %>%
+  ggplot(aes(x = status_code, y = n, fill = status_code)) +
+  geom_col() +
+  geom_text(aes(label = n), vjust = -.3, size = 3) +
+  guides(fill = F) +
+  theme_light() +
+  labs(title = "Status Codes",
+       subtitle = "von barf-alarm",
+       x = "Status Codes",
+       y = "Anzahl URLs",
+       caption = paste0("Stand: ", Sys.Date())) +
+  theme(plot.title = element_text(face = "bold"),
+        plot.subtitle = element_text(color = "#666666"),
+        plot.caption = element_text(color = "#AAAAAA", size = 10)) +
+  scale_fill_manual(values = COLOR_SCHEME)
+```
+
+Ein Großteil der Seiten (**`r round(crawl %>% filter(status_code == 200) %>% nrow() / nrow(crawl) * 100, 2)` %**) antwortet korrekterweise mit `200 OK`.
+
+## Woher kommen die 404er?
+
+```{r}
+### Woher werden die 404er verlinkt?
+(not_found_urls <- crawl %>%
+    filter(status_code == 404) %>%
+    select(address) %>%
+    inner_join(inlinks,
+                         by = c("address" = "destination"),
+                         copy = TRUE) %>%
+    select(address, source, anchor))
+
+write_csv(not_found_urls, "_exports/not_found_urls.csv")
+```
+
+## Delta-Betrchtung
+
+```{r}
+# Welche URLs werden nicht mehr / neu / weiterhin verlinkt?
+diff_crawls <- full_join_indicator(crawl_old %>%
+                                     select(address, content_type, seg_seitenbereich),
+                                   crawl %>%
+                                     select(address, content_type, seg_seitenbereich),
+                                   by = c("address", "content_type", "seg_seitenbereich"),
+                                   indicator = c("nicht_laenger_verlinkt", "neu_verlinkt", "identisch"))
+
+diff_crawls %>%
+  count(join_indicator, content_type, seg_seitenbereich) %>%
+  ggplot(aes(join_indicator, n, fill = join_indicator)) +
+  geom_col() +
+  facet_grid(~content_type) +
+  guides(fill = F) +
+  scale_fill_manual(values = COLOR_SCHEME) +
+  theme_light() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(face = "bold"),
+        plot.subtitle = element_text(color = "#666666"),
+        plot.caption = element_text(color = "#AAAAAA", size = 10)) +
+  labs(title = "Delta-Betrachtung",
+       subtitle = "2018-10-25 vs. 2019-02-05",
+       x = "",
+       y = "Anzahl URLs",
+       caption = paste0("Stand: ", Sys.Date()))
+```
+
+## Google Analytics
+
+```{r}
+library(googleAnalyticsR)
+library(googleAuthR)
+```
+
+```{r}
+options(googleAuthR.client_id = "XXX-XXX.apps.googleusercontent.com",
+        googleAuthR.client_secret = "XXX",
+        googleAuthR.scopes.selected = "https://www.googleapis.com/auth/analytics.readonly")
+
+gar_auth()
+```
+
+```{r}
+ga_data <- google_analytics(viewId = "XXX",
+                            date_range = c("2018-01-01", "2018-12-31"),
+                            metrics = "pageviews",
+                            dimensions = "pagePath",
+                            anti_sample = TRUE)
+
+ga_data <- ga_data %>%
+    mutate(address = paste0("https://www.barf-alarm.de", pagePath))
+```
+
+### Eigen- und Fremdwahrnehmung der Webpages
+
+```{r}
+pageviews_vs_linkscore <- crawl %>%
+    select(address, link_score, seg_seitenbereich) %>%
+    inner_join(ga_data,
+               by = "address")
+```
+
+```{r message=FALSE, warning=FALSE}
+ggplot(pageviews_vs_linkscore, aes(pageviews, link_score, color = seg_seitenbereich)) +
+    geom_point(alpha = .7, size = 4) +
+    theme_light() +
+    labs(title = "Eigen- vs. Fremdwahrnehmung",
+             subtitle = "Sind meine meist verlinkten Seiten auch die am häufigsten besuchten Seiten?",
+             x = "Page Views (log10)",
+             y = "Internal Link Score",
+             color = "Seitenbereich",
+             caption = paste0("Stand: ", Sys.Date())) +
+    theme(plot.title = element_text(face = "bold"),
+                plot.subtitle = element_text(color = "#666666"),
+                plot.caption = element_text(color = "#AAAAAA", size = 10)) +
+    scale_x_log10(labels = scales::comma_format(big.mark = ".", decimal.mark = "."))
+```
