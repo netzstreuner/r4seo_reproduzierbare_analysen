@@ -1,4 +1,5 @@
-# 
+# DIESE DATEI DIENT NUR MEINEM BIBLIOTHEKARISCHEN SEELENFRIEDEN, 
+# DA DAS REPO ANSONSTEN ALS CSS KATEGORISIERT WIRD
 * linguist-vendored
 *.Rmd linguist-vendored=false
 *.Rmd linguist-language=R
